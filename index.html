@@ -1,0 +1,391 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Apex 出力カーブ JSONジェネレーター</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        :root {
+            --primary-color: #6200ee;
+            --background-color: #f5f5f7;
+            --card-background: #ffffff;
+            --border-color: #e0e0e0;
+            --text-color: #333333;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            background-color: var(--background-color);
+            color: var(--text-color);
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            justify-content: center;
+        }
+
+        .container {
+            max-width: 900px;
+            width: 100%;
+            background: var(--card-background);
+            padding: 30px;
+            border-radius: 12px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+        }
+
+        h1 {
+            font-size: 24px;
+            margin-bottom: 20px;
+            border-bottom: 2px solid var(--border-color);
+            padding-bottom: 10px;
+        }
+
+        .config-section {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 30px;
+        }
+
+        @media (max-width: 768px) {
+            .config-section {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .input-group {
+            margin-bottom: 15px;
+        }
+
+        .input-group label {
+            display: block;
+            font-weight: bold;
+            margin-bottom: 5px;
+            font-size: 14px;
+        }
+
+        .input-group input[type="text"] {
+            width: 100%;
+            padding: 10px;
+            box-sizing: border-box;
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            font-size: 14px;
+        }
+
+        .points-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 10px;
+        }
+
+        .points-table th, .points-table td {
+            padding: 8px;
+            text-align: center;
+            border: 1px solid var(--border-color);
+        }
+
+        .points-table th {
+            background-color: #f9f9f9;
+            font-size: 13px;
+        }
+
+        .points-table input[type="number"] {
+            width: 70px;
+            padding: 6px;
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+            text-align: center;
+        }
+
+        .graph-container {
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 15px;
+            background-color: #fafafa;
+            position: relative;
+        }
+
+        .graph-title {
+            font-size: 14px;
+            font-weight: bold;
+            margin-bottom: 10px;
+            color: #555;
+        }
+
+        .output-section {
+            margin-top: 30px;
+        }
+
+        .output-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+
+        .btn {
+            background-color: var(--primary-color);
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            font-size: 14px;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        .btn:hover {
+            background-color: #4d00bd;
+        }
+
+        .btn-secondary {
+            background-color: #e0e0e0;
+            color: #333;
+        }
+        .btn-secondary:hover {
+            background-color: #d0d0d0;
+        }
+
+        textarea {
+            width: 100%;
+            height: 180px;
+            font-family: "Courier New", Courier, monospace;
+            padding: 15px;
+            box-sizing: border-box;
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            background-color: #f8f9fa;
+            font-size: 13px;
+            resize: vertical;
+        }
+        
+        .toast {
+            visibility: hidden;
+            min-width: 200px;
+            background-color: #333;
+            color: #fff;
+            text-align: center;
+            border-radius: 6px;
+            padding: 12px;
+            position: fixed;
+            z-index: 1;
+            left: 50%;
+            bottom: 30px;
+            transform: translateX(-50%);
+            font-size: 14px;
+        }
+
+        .toast.show {
+            visibility: visible;
+            animation: fadein 0.5s, fadeout 0.5s 2.5s;
+        }
+
+        @keyframes fadein { from { bottom: 0; opacity: 0; } to { bottom: 30px; opacity: 1; } }
+        @keyframes fadeout { from { bottom: 30px; opacity: 1; } to { bottom: 0; opacity: 0; } }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>出力カーブ 反応曲線ジェネレーター</h1>
+    
+    <div class="config-section">
+        <div>
+            <div class="input-group">
+                <label for="curveName">設定名 (name)</label>
+                <input type="text" id="curveName" value="ApeX_256_角煮-右スティック-curve" oninput="updateAll()">
+            </div>
+            
+            <div class="input-group">
+                <label>データ点 (8点 / 計16数値)</label>
+                <table class="points-table">
+                    <thead>
+                        <tr>
+                            <th>点</th>
+                            <th>X (物理ストローク)</th>
+                            <th>Y (出力値)</th>
+                        </tr>
+                    </thead>
+                    <tbody id="pointsBody">
+                        </tbody>
+                </table>
+            </div>
+            <div style="text-align: right; margin-top: 10px;">
+                <button class="btn btn-secondary" onclick="resetToLinear()">直線リセット</button>
+            </div>
+        </div>
+        
+        <div>
+            <div class="graph-container">
+                <div class="graph-title">出力カーブ プレビュー</div>
+                <canvas id="curveChart"></canvas>
+            </div>
+        </div>
+    </div>
+    
+    <div class="output-section">
+        <div class="output-header">
+            <h3>生成されたJSONコード</h3>
+            <button class="btn" onclick="copyJSON()">JSONをコピー</button>
+        </div>
+        <textarea id="jsonOutput" readonly></textarea>
+    </div>
+</div>
+
+<div id="toast" class="toast">コピーしました！</div>
+
+<script>
+    // 初期データ（アップロードされたファイルデータを元に設定）
+    const initialData = [0, 0, 13, 26, 79, 79, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100];
+    let chart;
+
+    // ページの初期化
+    window.onload = function() {
+        createTableRows();
+        initChart();
+        updateAll();
+    };
+
+    // テーブル行の動的生成
+    function createTableRows() {
+        const tbody = document.getElementById('pointsBody');
+        tbody.innerHTML = '';
+        
+        for (let i = 0; i < 8; i++) {
+            const tr = document.createElement('tr');
+            
+            const tdIndex = document.createElement('td');
+            tdIndex.textContent = `P${i + 1}`;
+            
+            const tdX = document.createElement('td');
+            const inputX = document.createElement('input');
+            inputX.type = 'number';
+            inputX.id = `x_${i}`;
+            inputX.value = initialData[i * 2];
+            inputX.min = 0;
+            inputX.max = 100;
+            inputX.addEventListener('input', updateAll);
+            tdX.appendChild(inputX);
+            
+            const tdY = document.createElement('td');
+            const inputY = document.createElement('input');
+            inputY.type = 'number';
+            inputY.id = `y_${i}`;
+            inputY.value = initialData[i * 2 + 1];
+            inputY.min = 0;
+            inputY.max = 100;
+            inputY.addEventListener('input', updateAll);
+            tdY.appendChild(inputY);
+            
+            tr.appendChild(tdIndex);
+            tr.appendChild(tdX);
+            tr.appendChild(tdY);
+            tbody.appendChild(tr);
+        }
+    }
+
+    // グラフの初期化
+    function initChart() {
+        const ctx = document.getElementById('curveChart').getContext('2d');
+        chart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                datasets: [{
+                    label: 'スティック出力値',
+                    data: [],
+                    borderColor: '#6200ee',
+                    borderWidth: 3,
+                    fill: false,
+                    tension: 0, // 点を直線で繋ぐ（カクカクした曲線に対応）
+                    pointBackgroundColor: '#6200ee',
+                    pointRadius: 5,
+                    pointHoverRadius: 7
+                }]
+            },
+            options: {
+                responsive: true,
+                scales: {
+                    x: {
+                        type: 'linear',
+                        position: 'bottom',
+                        title: { display: true, text: 'スティック物理ストローク', font: { weight: 'bold' } },
+                        min: 0,
+                        max: 100,
+                        ticks: { stepSize: 10 }
+                    },
+                    y: {
+                        title: { display: true, text: 'スティック出力値', font: { weight: 'bold' } },
+                        min: 0,
+                        max: 100,
+                        ticks: { stepSize: 10 }
+                    }
+                },
+                plugins: {
+                    legend: { display: false }
+                }
+            }
+        });
+    }
+
+    // 入力データから配列を取得
+    function getDataArray() {
+        const data = [];
+        for (let i = 0; i < 8; i++) {
+            const x = parseInt(document.getElementById(`x_${i}`).value) || 0;
+            const y = parseInt(document.getElementById(`y_${i}`).value) || 0;
+            data.push(x, y);
+        }
+        return data;
+    }
+
+    // すべての表示をアップデート（JSONとグラフ）
+    function updateAll() {
+        const name = document.getElementById('curveName').value;
+        const data = getDataArray();
+
+        // 1. JSONテキストエリアの更新
+        const jsonStructure = {
+            "name": name,
+            "data": data
+        };
+        document.getElementById('jsonOutput').value = JSON.stringify(jsonStructure, null, 2);
+
+        // 2. グラフの更新
+        const chartData = [];
+        for (let i = 0; i < 8; i++) {
+            chartData.push({ x: data[i * 2], y: data[i * 2 + 1] });
+        }
+        
+        // X座標でソート（グラフ描画線がバグるのを防ぐため）
+        chartData.sort((a, b) => a.x - b.x);
+
+        chart.data.datasets[0].data = chartData;
+        chart.update();
+    }
+
+    // 直線にリセットする機能
+    function resetToLinear() {
+        // 0から100まで均等に配分する標準的な直線
+        const linearValues = [0,0, 14,14, 28,28, 42,42, 57,57, 71,71, 85,85, 100,100];
+        for (let i = 0; i < 8; i++) {
+            document.getElementById(`x_${i}`).value = linearValues[i * 2];
+            document.getElementById(`y_${i}`).value = linearValues[i * 2 + 1];
+        }
+        updateAll();
+    }
+
+    // クリップボードにJSONをコピー
+    function copyJSON() {
+        const textarea = document.getElementById('jsonOutput');
+        textarea.select();
+        document.execCommand('copy');
+
+        // トースト通知を表示
+        const toast = document.getElementById('toast');
+        toast.className = "toast show";
+        setTimeout(function(){ toast.className = toast.className.replace("show", ""); }, 3000);
+    }
+</script>
+
+</body>
+</html>
