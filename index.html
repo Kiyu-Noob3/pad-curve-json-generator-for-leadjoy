@@ -12,6 +12,7 @@
             --card-background: #ffffff;
             --border-color: #e0e0e0;
             --text-color: #333333;
+            --error-color: #d32f2f;
         }
 
         body {
@@ -197,7 +198,7 @@
             </div>
             
             <div class="input-group">
-                <label>データ点 (8点 / 計16数値) ※入力後に自動ソートされます</label>
+                <label>データ点 (8点 / 計16数値) ※入力後に自動チェック・ソートされます</label>
                 <table class="points-table">
                     <thead>
                         <tr>
@@ -207,7 +208,7 @@
                         </tr>
                     </thead>
                     <tbody id="pointsBody">
-                        </tbody>
+                    </tbody>
                 </table>
             </div>
             <div style="text-align: right; margin-top: 10px;">
@@ -235,18 +236,21 @@
 <div id="toast" class="toast">コピーしました！</div>
 
 <script>
-    // 初期状態はきれいな直線（0から100まで等倍配分）
     const linearValues = [0,0, 14,14, 28,28, 42,42, 57,57, 71,71, 85,85, 100,100];
+    // 直前の「正常だった状態」を記憶しておくためのバックアップ用配列
+    let previousValidPoints = [];
     let chart;
 
-    // ページの初期化
     window.onload = function() {
+        // 初期状態のバックアップを作成
+        for (let i = 0; i < 8; i++) {
+            previousValidPoints.push({ x: linearValues[i * 2], y: linearValues[i * 2 + 1] });
+        }
         createTableRows();
         initChart();
         updateAll();
     };
 
-    // テーブル行の動的生成
     function createTableRows() {
         const tbody = document.getElementById('pointsBody');
         tbody.innerHTML = '';
@@ -261,10 +265,9 @@
             const inputX = document.createElement('input');
             inputX.type = 'number';
             inputX.id = `x_${i}`;
-            inputX.value = linearValues[i * 2];
+            inputX.value = previousValidPoints[i].x;
             inputX.min = 0;
             inputX.max = 100;
-            // 入力中ではなく、入力が終わって枠からフォーカスが外れた時（change）か、エンターを押した時にソートを実行
             inputX.addEventListener('change', handleInputChange);
             tdX.appendChild(inputX);
             
@@ -272,7 +275,7 @@
             const inputY = document.createElement('input');
             inputY.type = 'number';
             inputY.id = `y_${i}`;
-            inputY.value = linearValues[i * 2 + 1];
+            inputY.value = previousValidPoints[i].y;
             inputY.min = 0;
             inputY.max = 100;
             inputY.addEventListener('change', handleInputChange);
@@ -285,7 +288,6 @@
         }
     }
 
-    // グラフの初期化
     function initChart() {
         const ctx = document.getElementById('curveChart').getContext('2d');
         chart = new Chart(ctx, {
@@ -328,9 +330,8 @@
         });
     }
 
-    // 入力変更時の処理（ソートを行ってから全体更新）
+    // 入力変更時のバリデーションとソート処理
     function handleInputChange() {
-        // 現在のテーブルの値をオブジェクトの配列として取得
         const points = [];
         for (let i = 0; i < 8; i++) {
             const x = parseInt(document.getElementById(`x_${i}`).value) || 0;
@@ -338,23 +339,44 @@
             points.push({ x, y });
         }
 
-        // X座標が小さい順に並び替え（自動ソート）
+        // 1. まずは元々の仕様通り、X座標が小さい順に並び替える（自動ソート）
         points.sort((a, b) => a.x - b.x);
 
-        // ソートされた値を入力欄に書き戻す
+        // 2. Y座標のチェック（後ろの点より高いYが設定されていないか、＝Xが大きくなるにつれてYが減少していないか）
+        let isValid = true;
+        for (let i = 1; i < points.length; i++) {
+            if (points[i].y < points[i - 1].y) {
+                isValid = false;
+                break;
+            }
+        }
+
+        if (!isValid) {
+            // 警告のアラートを表示
+            alert("エラー: 後ろの点（Xが大きい点）の出力値(Y)が、前の点よりも低くなっています。\nX軸の進行に伴って、出力値(Y)は同じか、より高い値になるように設定してください。");
+            
+            // 不正な入力なので、直前の正しい状態にフォームの数値を差し戻す
+            for (let i = 0; i < 8; i++) {
+                document.getElementById(`x_${i}`).value = previousValidPoints[i].x;
+                document.getElementById(`y_${i}`).value = previousValidPoints[i].y;
+            }
+            return; // 処理を中断して、更新を行わない
+        }
+
+        // 正しい入力だった場合は、現在の状態を「最新の正常な状態」としてバックアップ
+        previousValidPoints = JSON.parse(JSON.stringify(points));
+
+        // ソート・確定された値を入力欄に綺麗に書き戻す
         for (let i = 0; i < 8; i++) {
             document.getElementById(`x_${i}`).value = points[i].x;
             document.getElementById(`y_${i}`).value = points[i].y;
         }
 
-        // グラフとJSONを更新
         updateAll();
     }
 
-    // 表示のアップデート（JSONとグラフ）
     function updateAll() {
         const name = document.getElementById('curveName').value;
-        
         const data = [];
         const chartData = [];
         
@@ -365,28 +387,27 @@
             chartData.push({ x: x, y: y });
         }
 
-        // JSONテキストエリアの更新
         const jsonStructure = {
             "name": name,
             "data": data
         };
         document.getElementById('jsonOutput').value = JSON.stringify(jsonStructure, null, 2);
 
-        // グラフの更新
         chart.data.datasets[0].data = chartData;
         chart.update();
     }
 
-    // 直線にリセット
     function resetToLinear() {
+        // バックアップも直線データに更新
+        previousValidPoints = [];
         for (let i = 0; i < 8; i++) {
+            previousValidPoints.push({ x: linearValues[i * 2], y: linearValues[i * 2 + 1] });
             document.getElementById(`x_${i}`).value = linearValues[i * 2];
             document.getElementById(`y_${i}`).value = linearValues[i * 2 + 1];
         }
         updateAll();
     }
 
-    // クリップボードにJSONをコピー
     function copyJSON() {
         const textarea = document.getElementById('jsonOutput');
         textarea.select();
